@@ -243,7 +243,7 @@ def train_dqn_agent(episodes=500, learning_rate=0.001, gamma=0.99,
 
 
 # 5. 训练MORL Agent函数
-def train_morl_agent(total_timesteps=100000):
+def train_morl_agent(total_timesteps=1000000):
     """训练MORL代理"""
     print("开始训练MORL Agent...")
     
@@ -251,14 +251,14 @@ def train_morl_agent(total_timesteps=100000):
     eval_env = make_mo_env()
 
     # 设置算法参数
-    learning_rate = 3e-4
+    learning_rate = 1e-4
     initial_epsilon = 0.2
     final_epsilon = 0.01
     epsilon_decay_steps = 50000
     tau = 1.0
     target_net_update_freq = 200
     buffer_size = int(2e6)
-    net_arch = [256, 256, 256, 256]
+    net_arch = [256, 256, 256, 256, 256, 256]
     batch_size = 64
     learning_starts = 1000
     gradient_updates = 1
@@ -458,6 +458,100 @@ def plot_comparison(fitness_diff_genotypes, title):
     plt.close()
 
 
+def collect_fitness_data(agent_dqn, agent_morl, eval_env, drugs, num_episodes=100):
+    """收集三种策略(随机、DQN、MORL)的原始适应度数据"""
+    print("收集三种策略的适应度数据...")
+    
+    # 创建数据结构存储三种策略的适应度结果
+    random_fitness = [[] for _ in range(16)]
+    dqn_fitness = [[] for _ in range(16)]
+    morl_fitness = [[] for _ in range(16)]
+    
+    # 逐个基因型进行比较
+    for genotype_idx in range(16):
+        # 设置MORL权重向量，目标基因型为1，其他为0
+        weights = np.zeros(16)
+        weights[genotype_idx] = 1
+        
+        for episode in range(num_episodes):
+            obs, _ = eval_env.reset()
+            dqn_env = deepcopy(eval_env)
+            random_env = deepcopy(eval_env)
+            done = False
+            
+            while not done:
+                # 选择动作
+                action_morl = agent_morl.eval(obs, weights)
+                action_dqn = agent_dqn.select_action(obs)
+                action_rand = random.randint(0, 14)
+                
+                # 执行动作
+                next_obs, reward, done, truncated, info = eval_env.step(action_morl)
+                next_obs_dqn, _, dqn_done, _, _ = dqn_env.step(action_dqn)
+                next_obs_rand, _, rand_done, _, _ = random_env.step(action_rand)
+                
+                # 记录各策略对当前基因型的适应度值
+                morl_fitness[genotype_idx].append(drugs[action_morl][genotype_idx])
+                dqn_fitness[genotype_idx].append(drugs[action_dqn][genotype_idx])
+                random_fitness[genotype_idx].append(drugs[action_rand][genotype_idx])
+                
+                # 更新状态
+                obs = next_obs
+                done = done or truncated
+    
+    return random_fitness, dqn_fitness, morl_fitness
+
+def plot_violin_comparison(random_fitness, dqn_fitness, morl_fitness):
+    """使用小提琴图绘制三种策略的原始适应度结果"""
+    fig, axes = plt.subplots(4, 4, figsize=(20, 20))
+    
+    # 设置小提琴图的颜色
+    colors = ["#1f77b4", "#ff7f0e", "#2ca02c"]  # 蓝、橙、绿
+    labels = ["Random", "DQN", "MORL"]
+    
+    for i, ax in enumerate(axes.flatten()):
+        # 准备数据
+        data_to_plot = [
+            random_fitness[i],
+            dqn_fitness[i],
+            morl_fitness[i]
+        ]
+        
+        # 绘制小提琴图
+        parts = ax.violinplot(data_to_plot, showmeans=False, showmedians=True)
+        
+        # 设置颜色
+        for pc, color in zip(parts['bodies'], colors):
+            pc.set_facecolor(color)
+            pc.set_alpha(0.7)
+        
+        # 添加标题和标签
+        ax.set_title(f"Genotype {i + 1}", fontsize=24, pad=10)
+        ax.set_xticks([1, 2, 3])
+        ax.set_xticklabels(labels, rotation=45, fontsize=20)
+        ax.tick_params(axis='y', labelsize=8)
+        
+        # 计算并标注中位数
+        medians = [np.median(data) for data in data_to_plot]
+        for j, median in enumerate(medians):
+            ax.text(j+1, median + 0.1, f"{median:.2f}", 
+                   horizontalalignment='center', size='x-small', 
+                   color='black', weight='semibold')
+        
+        # 添加网格线
+        ax.grid(True, linestyle='--', alpha=0.3)
+        
+        # 设置y轴标签
+        if i % 4 == 0:  # 只在每行第一个子图上添加y轴标签
+            ax.set_ylabel("Fitness Value", fontsize=10)
+
+    # 添加整体标题
+    plt.suptitle("Comparison of Fitness Values Across Different Strategies", fontsize=16)
+    
+    plt.tight_layout(pad=3.0, rect=[0, 0, 1, 0.96])  # rect参数为整体标题留出空间
+    plt.savefig("strategy_fitness_comparison.png", dpi=300, bbox_inches='tight')
+    plt.close()
+
 # 8. 主函数
 def main():
     # 定义药物适应度数据
@@ -471,7 +565,7 @@ def main():
     dqn_agent = train_dqn_agent(episodes=500)
     
     # 训练MORL代理
-    morl_agent = train_morl_agent(total_timesteps=100000)
+    morl_agent = train_morl_agent(total_timesteps=200000)
     
     # 比较随机策略和DQN
     random_vs_dqn_results = compare_random_vs_dqn(dqn_agent, eval_env, drugs, num_episodes=100)
