@@ -92,7 +92,7 @@ class DQNAgent:
                  epsilon_min=0.005,
                  epsilon_decay=0.995,
                  update_target_every=300,
-                 device="cpu"):
+                 device=torch.device("mps" if torch.backends.mps.is_available() else "cpu")):
         self.num_actions = num_actions
         self.gamma = gamma
         self.epsilon = epsilon
@@ -568,18 +568,11 @@ def main():
     morl_agent = train_morl_agent(total_timesteps=200000)
     
     # 比较随机策略和DQN
-    random_vs_dqn_results = compare_random_vs_dqn(dqn_agent, eval_env, drugs, num_episodes=100)
-    plot_comparison(random_vs_dqn_results, "Δ Fitness (Random - DQN)")
-    
-    # 比较随机策略和MORL
-    random_vs_morl_results = compare_random_vs_morl(morl_agent, mo_eval_env, drugs, num_episodes=100)
-    plot_comparison(random_vs_morl_results, "Δ Fitness (Random - MORL)")
-    
-    # 比较DQN策略和MORL
-    dqn_vs_morl_results = compare_dqn_vs_morl(dqn_agent, morl_agent, mo_eval_env, drugs, num_episodes=100)
-    plot_comparison(dqn_vs_morl_results, "Δ Fitness (DQN - MORL)")
-    
-    print("比较完成，结果已保存为图片")
+    random_fitness, dqn_fitness, morl_fitness = collect_fitness_data(
+        dqn_agent, morl_agent, mo_eval_env, drugs, num_episodes=100
+    )
+    plot_violin_comparison(random_fitness, dqn_fitness, morl_fitness)
+    print("随机策略 vs DQN 比较完成！")
 
 
 if __name__ == "__main__":
